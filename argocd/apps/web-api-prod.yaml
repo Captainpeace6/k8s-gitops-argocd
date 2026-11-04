@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: web-api-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/Captainpeace6/k8s-gitops-argocd.git
+    targetRevision: main
+    path: charts/web-api
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: web-api-prod
+  # Prod syncs only when someone clicks Sync (or argocd app sync) after review.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+  # The HPA owns replica count; don't let Argo fight it.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

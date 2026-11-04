@@ -1,0 +1,29 @@
+replicaCount: 3
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 20
+
+podDisruptionBudget:
+  minAvailable: 2
+
+ingress:
+  enabled: true
+  host: api.example.com
+  tlsSecretName: api-example-com-tls
+
+env:
+  PODINFO_UI_MESSAGE: "prod"
+
+metrics:
+  serviceMonitor:
+    enabled: true
+  alerts:
+    enabled: true

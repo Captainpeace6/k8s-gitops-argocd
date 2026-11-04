@@ -1,0 +1,77 @@
+name: k8s-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint & validate manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | sudo tar xz -C /usr/local/bin kubeconform
+      - name: yamllint
+        run: pip install yamllint && yamllint .
+      - name: helm lint (every environment)
+        run: |
+          for env in dev prod; do
+            helm lint charts/web-api -f charts/web-api/values.yaml -f charts/web-api/values-$env.yaml --strict
+          done
+      - name: Render + schema-validate
+        run: ./ci/kubeconform.sh
+
+  e2e:
+    name: Deploy to a kind cluster
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: ci
+      - name: Install metrics-server (so the HPA can read CPU/memory)
+        run: |
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
+          kubectl -n kube-system patch deploy metrics-server --type=json \
+            -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+      - name: helm install (prod values, no Prometheus CRDs in CI)
+        run: |
+          helm install web-api charts/web-api \
+            -f charts/web-api/values.yaml -f charts/web-api/values-prod.yaml \
+            --set metrics.serviceMonitor.enabled=false \
+            --set metrics.alerts.enabled=false \
+            --set ingress.enabled=false \
+            --namespace web-api-prod --create-namespace \
+            --wait --timeout 5m
+      - name: Smoke test from inside the cluster
+        run: |
+          kubectl -n web-api-prod get deploy,po,svc,hpa,pdb,networkpolicy
+          kubectl -n web-api-prod run smoke --image=curlimages/curl:8.10.1 --restart=Never --rm -i --quiet -- \
+            sh -c 'curl -sf http://web-api/healthz && curl -sf http://web-api/readyz && curl -sf http://web-api/metrics | grep -m1 http_request'
+      - name: Rolling update keeps the service up
+        run: |
+          helm upgrade web-api charts/web-api \
+            -f charts/web-api/values.yaml -f charts/web-api/values-prod.yaml \
+            --set metrics.serviceMonitor.enabled=false --set metrics.alerts.enabled=false --set ingress.enabled=false \
+            --set env.PODINFO_UI_MESSAGE=rolled \
+            --namespace web-api-prod --wait --timeout 5m
+          kubectl -n web-api-prod rollout status deploy/web-api --timeout=3m
+      - name: Debug on failure
+        if: failure()
+        run: |
+          kubectl get events -A --sort-by=.lastTimestamp | tail -40
+          kubectl -n web-api-prod describe pods | tail -80

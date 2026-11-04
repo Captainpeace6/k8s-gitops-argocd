@@ -1,0 +1,45 @@
+# Overrides for kube-prometheus-stack.
+
+grafana:
+  adminPassword: ""          # set via an existing secret; never commit it
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  defaultDashboardsTimezone: browser
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    # Pick up ServiceMonitors / PrometheusRules from any namespace that carries the release label.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+
+alertmanager:
+  config:
+    route:
+      receiver: "null"
+      group_by: ["alertname", "namespace"]
+      routes:
+        - matchers: ['severity="page"']
+          receiver: oncall
+    receivers:
+      - name: "null"
+      - name: oncall  # wire to PagerDuty/Slack with a secret-mounted URL in a real cluster

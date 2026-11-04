@@ -1,0 +1,17 @@
+replicaCount: 1
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 3
+
+podDisruptionBudget:
+  enabled: false
+
+env:
+  PODINFO_UI_MESSAGE: "dev"
+
+metrics:
+  serviceMonitor:
+    enabled: true
+  alerts:
+    enabled: true

@@ -1,0 +1,42 @@
+{{- if .Values.metrics.alerts.enabled }}
+{{- $name := include "web-api.fullname" . }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "web-api.labels" . | nindent 4 }}
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: {{ $name }}.rules
+      rules:
+        - alert: WebApiHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}", status=~"5.."}[5m]))
+              / clamp_min(sum(rate(http_requests_total{namespace="{{ .Release.Namespace }}"}[5m])), 1e-9) > 0.05
+          for: 10m
+          labels:
+            severity: page
+          annotations:
+            summary: "More than 5% of requests are failing in {{ .Release.Namespace }}"
+        - alert: WebApiOOMKilled
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace="{{ .Release.Namespace }}", container="app"}[15m]) > 0
+              and on (namespace, pod, container)
+            kube_pod_container_status_last_terminated_reason{namespace="{{ .Release.Namespace }}", container="app", reason="OOMKilled"} == 1
+          labels:
+            severity: ticket
+          annotations:
+            summary: "A web-api pod was OOMKilled in {{ .Release.Namespace }}"
+            runbook_url: https://github.com/Captainpeace6/k8s-gitops-argocd/blob/main/docs/runbooks/oomkilled.md
+        - alert: WebApiAtMaxReplicas
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="{{ .Release.Namespace }}", horizontalpodautoscaler="{{ $name }}"}
+              >= kube_horizontalpodautoscaler_spec_max_replicas{namespace="{{ .Release.Namespace }}", horizontalpodautoscaler="{{ $name }}"}
+          for: 15m
+          labels:
+            severity: ticket
+          annotations:
+            summary: "HPA has been pinned at max replicas for 15 minutes"
+{{- end }}

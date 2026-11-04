@@ -1,0 +1,71 @@
+# -- Defaults are safe for production; environments override in values-<env>.yaml.
+
+image:
+  repository: ghcr.io/stefanprodan/podinfo
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+containerPort: 9898
+
+# Requests size scheduling; the memory limit is what the OOM killer enforces.
+# See docs/runbooks/oomkilled.md before lowering it.
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 2
+    periodSeconds: 5
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  host: ""
+  tlsSecretName: ""
+
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to call the service (matched by kubernetes.io/metadata.name).
+  allowedNamespaces:
+    - ingress-nginx
+    - monitoring
+
+metrics:
+  serviceMonitor:
+    enabled: false   # needs the Prometheus Operator CRDs (kube-prometheus-stack)
+    interval: 30s
+  alerts:
+    enabled: false
+
+env: {}
+
+podAnnotations: {}
+
+topologySpread:
+  enabled: true
