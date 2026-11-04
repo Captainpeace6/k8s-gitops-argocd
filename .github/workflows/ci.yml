@@ -48,9 +48,12 @@ jobs:
           kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
           kubectl -n kube-system patch deploy metrics-server --type=json \
             -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+      # The CI runner is a single small kind node: keep prod replica counts and HPA/PDB,
+      # but shrink CPU requests so 3 pods + a rolling-update surge pod fit on it.
       - name: helm install (prod values, no Prometheus CRDs in CI)
         run: |
           helm install web-api charts/web-api \
+            --set resources.requests.cpu=50m \
             -f charts/web-api/values.yaml -f charts/web-api/values-prod.yaml \
             --set metrics.serviceMonitor.enabled=false \
             --set metrics.alerts.enabled=false \
@@ -67,7 +70,7 @@ jobs:
           helm upgrade web-api charts/web-api \
             -f charts/web-api/values.yaml -f charts/web-api/values-prod.yaml \
             --set metrics.serviceMonitor.enabled=false --set metrics.alerts.enabled=false --set ingress.enabled=false \
-            --set env.PODINFO_UI_MESSAGE=rolled \
+            --set env.PODINFO_UI_MESSAGE=rolled --set resources.requests.cpu=50m \
             --namespace web-api-prod --wait --timeout 5m
           kubectl -n web-api-prod rollout status deploy/web-api --timeout=3m
       - name: Debug on failure
